@@ -1,0 +1,8 @@
+name: snpeff_env
+channels:
+  - bioconda
+  - conda-forge
+dependencies:
+  - snpeff
+  - bcftools
+

@@ -2,13 +2,13 @@
 nextflow.enable.dsl = 2
 
 // ==================== PROCESSES =======================
+
 // ------------------------------------------------------
-// Step 1: FASTQC + MULTIQC on RAW reads
+// Step 1: Raw reads quality check
 // ------------------------------------------------------
 process FASTQC_RAW {
     tag "$sample_id"
-    cpus 8
-    conda "/hps/software/users/jlees/ines/miniforge3/envs/fastqc"
+    conda "${projectDir}/envs/fastqc.yml"
     publishDir "${params.outdir}/fastqc_raw", mode: 'copy'
     
     input:
@@ -23,8 +23,7 @@ process FASTQC_RAW {
 }
 
 process MULTIQC_RAW {
-    cpus 8
-    conda "/hps/software/users/jlees/ines/miniforge3/envs/fastqc"
+    conda "${projectDir}/envs/fastqc.yml"
     publishDir "${params.outdir}/multiqc_raw", mode: 'copy'
     
     input:
@@ -38,13 +37,12 @@ process MULTIQC_RAW {
 }
 
 // ------------------------------------------------------
-// Step 2: FASTP TRIMMING on RAW reads
+// Step 2: Trimming raw reads
 // ------------------------------------------------------
 process FASTP_TRIM {
     tag "$sample_id"
-    cpus 8
-    conda "/hps/software/users/jlees/ines/miniforge3/envs/trim"
-    publishDir "${params.outdir}/fastp_output", mode: 'copy'
+    conda "${projectDir}/envs/fastp.yml"
+    publishDir "${params.outdir}/trimmed", mode: 'copy'
     
     input:
     tuple val(sample_id), path(r1), path(r2)
@@ -63,21 +61,16 @@ process FASTP_TRIM {
         -j "${sample_id}_fastp.json" \
         --thread $task.cpus \
         --detect_adapter_for_pe \
-        --correction \
-        --cut_tail \
-        --cut_front \
-        --qualified_quality_phred 20 \
-        --length_required 50
+        --qualified_quality_phred 20
     """
 }
 
 // ------------------------------------------------------
-// Step 3: FASTQC + MULTIQC on TRIMMED reads
+// Step 3: Trimming quality check
 // ------------------------------------------------------
 process FASTQC_TRIM {
     tag "$sample_id"
-    cpus 8
-    conda "/hps/software/users/jlees/ines/miniforge3/envs/fastqc"
+    conda "${projectDir}/envs/fastqc.yml"
     publishDir "${params.outdir}/fastqc_trim", mode: 'copy'
     
     input:
@@ -93,7 +86,7 @@ process FASTQC_TRIM {
 
 process MULTIQC_TRIM {
     cpus 8
-    conda "/hps/software/users/jlees/ines/miniforge3/envs/fastqc"
+    conda "${projectDir}/envs/fastqc.yml"
     publishDir "${params.outdir}/multiqc_trim", mode: 'copy'
     
     input:
@@ -107,13 +100,12 @@ process MULTIQC_TRIM {
 }
 
 // ------------------------------------------------------
-// Step 4: KRAKEN2 classification (host reads filtering)
+// Step 4: Filtering-out host reads
 // ------------------------------------------------------
 process KRAKEN2_CLASSIFY {
     tag "$sample_id"
-    cpus 8
-    conda "/hps/software/users/jlees/ines/miniforge3/envs/kraken2"
-    publishDir "${params.outdir}/kraken2_output", mode: 'copy'
+    conda "${projectDir}/envs/kraken2.yml"
+    publishDir "${params.outdir}/host_filtered", mode: 'copy'
     
     input:
     tuple val(sample_id), path(r1), path(r2)
@@ -137,12 +129,12 @@ process KRAKEN2_CLASSIFY {
 }
 
 // ------------------------------------------------------
-// Step 5: BWA-MEM Alignment (Add Read groups) + Sort & Index on classified reads
+// Step 5: ALIGNMENT -Add Read groups + Sort & Index classified reads
 // ------------------------------------------------------
 process BWA_MEM_MAP {
     tag "$sample_id"
     cpus 8
-    conda "/hps/software/users/jlees/ines/miniforge3/envs/assembly"
+    conda "${projectDir}/envs/bwa-mem.yml""
     publishDir "${params.outdir}/mapping_output", mode: 'copy'
     
     input:
@@ -152,19 +144,18 @@ process BWA_MEM_MAP {
     script:
     def rg = "@RG\\tID:${sample_id}\\tSM:${sample_id}\\tLB:${sample_id}\\tPL:${params.pl}\\tPM:${params.pm}"
     """
-    bwa mem -t $task.cpus -R "$rg" "${params.reference_map}" "$r1" "$r2" | \
+    bwa mem -t $task.cpus -R "$rg" "${params.reference_fasta}" "$r1" "$r2" | \
     samtools sort -@ $task.cpus -o "${sample_id}.sorted.bam" -
     samtools index "${sample_id}.sorted.bam"
     """
 }
 
 // ------------------------------------------------------
-// Step 6: Samtools QC + MultiQC on Mapped reads
+// Step 6: Alignment quality check
 // ------------------------------------------------------
 process ALIGNMENT_QC_MAP {
     tag "$sample_id"
-    cpus 8
-    conda "/hps/software/users/jlees/ines/miniforge3/envs/assembly"
+    conda "${projectDir}/envs/samtools.yml"
     publishDir "${params.outdir}/alignment_qc", mode: 'copy'
     
     input:
@@ -182,9 +173,8 @@ process ALIGNMENT_QC_MAP {
 }
 
 process MULTIQC_MAP {
-    cpus 8
-    conda "/hps/software/users/jlees/ines/miniforge3/envs/fastqc"
-    publishDir "${params.outdir}/multiqc_map", mode: 'copy'
+    conda "${projectDir}/envs/fastqc.yml"
+    publishDir "${params.outdir}/alignment_qc", mode: 'copy'
     input:
     path alignmentqc_reports
     output:
@@ -200,8 +190,7 @@ process MULTIQC_MAP {
 // ------------------------------------------------------
 process MARK_DUPLICATES {
     tag "$sample_id"
-    cpus 8
-    conda "/hps/software/users/jlees/ines/miniforge3/envs/variantcall"
+    conda "${projectDir}/envs/gatk.yml"
     publishDir "${params.outdir}/markdedup_output", mode: 'copy'
     
     input:
@@ -227,9 +216,8 @@ process MARK_DUPLICATES {
 // ------------------------------------------------------
 process HAPLOTYPE_CALLER {
     tag "$sample_id"
-    cpus 8
-    conda "/hps/software/users/jlees/ines/miniforge3/envs/variantcall"
-    publishDir "${params.outdir}/variants/snpindels", mode: 'copy'
+    conda "${projectDir}/envs/gatk.yml"
+    publishDir "${params.outdir}/variants/gvcf", mode: 'copy'
     
     input:
     tuple val(sample_id), path(bam), path(bai)
@@ -238,7 +226,7 @@ process HAPLOTYPE_CALLER {
     script:
     """
     gatk HaplotypeCaller \
-        -R "${params.reference_variant}" \
+        -R "${params.reference_fasta}" \
         -I "$bam" \
         -O "${sample_id}_snpindels.g.vcf.gz" \
         --native-pair-hmm-threads $task.cpus \
@@ -253,9 +241,8 @@ process HAPLOTYPE_CALLER {
 // ------------------------------------------------------
 process GENOTYPE_GVCF {
     tag "$sample_id"
-    cpus 8
-    conda "/hps/software/users/jlees/ines/miniforge3/envs/variantcall"
-    publishDir "${params.outdir}/variants/genotyped", mode: 'copy'
+    conda "${projectDir}/envs/gatk.yml"
+    publishDir "${params.outdir}/variants/vcf", mode: 'copy'
     
     input:
     tuple val(sample_id), path(gvcf), path(gvcf_idx)
@@ -264,7 +251,7 @@ process GENOTYPE_GVCF {
     script:
     """
     gatk GenotypeGVCFs \
-        -R "${params.reference_variant}" \
+        -R "${params.reference_fasta}" \
         -V "$gvcf" \
         -O "${sample_id}.vcf.gz"
     """
@@ -275,9 +262,8 @@ process GENOTYPE_GVCF {
 // ------------------------------------------------------
 process SELECT_VARIANTS {
     tag "$sample_id"
-    cpus 8
-    conda "/hps/software/users/jlees/ines/miniforge3/envs/variantcall"
-    publishDir "${params.outdir}/selected", mode: 'copy'
+    conda "${projectDir}/envs/gatk.yml"
+    publishDir "${params.outdir}/variants/selected", mode: 'copy'
     
     input:
     tuple val(sample_id), path(vcf), path(vcf_idx)
@@ -287,12 +273,12 @@ process SELECT_VARIANTS {
     script:
     """
     gatk SelectVariants \
-        -R "${params.reference_variant}" \
+        -R "${params.reference_fasta}" \
         -V "$vcf" \
         --select-type-to-include SNP \
         -O "${sample_id}_raw_snps.vcf.gz"
     gatk SelectVariants \
-        -R "${params.reference_variant}" \
+        -R "${params.reference_fasta}" \
         -V "$vcf" \
         --select-type-to-include INDEL \
         -O "${sample_id}_raw_indels.vcf.gz"
@@ -304,8 +290,7 @@ process SELECT_VARIANTS {
 // ------------------------------------------------------
 process FILTER_SNPs {
     tag "$sample_id"
-    cpus 8
-    conda "/hps/software/users/jlees/ines/miniforge3/envs/variantcall"
+    conda "${projectDir}/envs/gatk.yml"
     publishDir "${params.outdir}/variants/filtered_snps", mode: 'copy'
     
     input:
@@ -315,7 +300,7 @@ process FILTER_SNPs {
     script:
     """
     gatk VariantFiltration \
-        -R "${params.reference_variant}" \
+        -R "${params.reference_fasta" \
         -V "$raw_snps" \
         -O "${sample_id}_filtered_snps.vcf.gz" \
         --filter-expression "QD < 2.0 || FS > 60.0 || MQ < 40.0" \
@@ -326,8 +311,7 @@ process FILTER_SNPs {
 
 process FILTER_INDELs {
     tag "$sample_id"
-    cpus 8
-    conda "/hps/software/users/jlees/ines/miniforge3/envs/variantcall"
+    conda "${projectDir}/envs/gatk.yml"
     publishDir "${params.outdir}/variants/filtered_indels", mode: 'copy'
     
     input:
@@ -337,7 +321,7 @@ process FILTER_INDELs {
     script:
     """
     gatk VariantFiltration \
-        -R "${params.reference_variant}" \
+        -R "${params.reference_fasta" \
         -V "$raw_indels" \
         -O "${sample_id}_filtered_indels.vcf.gz" \
         --filter-expression "QD < 2.0 || FS > 200.0 || ReadPosRankSum < -20.0" \
@@ -347,12 +331,11 @@ process FILTER_INDELs {
 }
 
 // ------------------------------------------------------
-// Step 12: Mask Hypervariable regions from Variants
+// Step 12: Mask hypervariable regions from Variants
 // ------------------------------------------------------
 process MASK_SNP_VARIANTS {
     tag "$sample_id"
-    cpus 4
-    conda "/hps/software/users/jlees/ines/miniforge3/envs/variantcall"
+    conda "${projectDir}/envs/bcftools.yml"
     publishDir "${params.outdir}/masked_snps", mode: 'copy'
     
     input:
@@ -369,7 +352,7 @@ process MASK_SNP_VARIANTS {
 process MASK_INDEL_VARIANTS {
     tag "$sample_id"
     cpus 4
-    conda "/hps/software/users/jlees/ines/miniforge3/envs/variantcall"
+    conda "${projectDir}/envs/bcftools.yml"
     publishDir "${params.outdir}/masked_indels", mode: 'copy'
     
     input:
@@ -384,12 +367,11 @@ process MASK_INDEL_VARIANTS {
 }
 
 // ------------------------------------------------------
-// Step 13: Annotate Variants (from GATK)
+// Step 13: Annotate Variants
 // ------------------------------------------------------
 process SNPEFF_Annotate_SNPs {
     tag "$sample_id"
-    cpus 8
-    conda "/hps/software/users/jlees/ines/miniforge3/envs/snpeff"
+    conda "${projectDir}/envs/snpeff.yml"
     publishDir "${params.outdir}/annotated_snps", mode: 'copy'
     
     input:
@@ -408,8 +390,7 @@ process SNPEFF_Annotate_SNPs {
 
 process SNPEFF_Annotate_INDELs {
     tag "$sample_id"
-    cpus 8
-    conda "/hps/software/users/jlees/ines/miniforge3/envs/snpeff"
+    conda "${projectDir}/envs/snpeff.yml"
     publishDir "${params.outdir}/annotated_indels", mode: 'copy'
     
     input:
@@ -431,8 +412,7 @@ process SNPEFF_Annotate_INDELs {
 // ----------------------------------------------------------
 process SPLIT_ANNOTATED_SNPS_BY_CHROM {
     tag "${sample_id} - ${chrom}"
-    cpus 8
-    conda "/hps/software/users/jlees/ines/miniforge3/envs/variantcall"
+    conda "${projectDir}/envs/bcftools.yml"
     publishDir "${params.outdir}/per_chrom_snps", mode: 'copy'
 
     input:
@@ -448,8 +428,7 @@ process SPLIT_ANNOTATED_SNPS_BY_CHROM {
 
 process SPLIT_ANNOTATED_INDELS_BY_CHROM {
     tag "${sample_id} - ${chrom}"
-    cpus 8
-    conda "/hps/software/users/jlees/ines/miniforge3/envs/variantcall"
+    conda "${projectDir}/envs/bcftools.yml"
     publishDir "${params.outdir}/per_chrom_indels", mode: 'copy'
 
     input:

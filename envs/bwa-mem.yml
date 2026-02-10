@@ -1,0 +1,9 @@
+name: bwa-mem_env
+channels:
+  - bioconda
+  - conda-forge
+dependencies:
+  - bwa-mem
+  - samtools
+  - bcftools
+
